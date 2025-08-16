@@ -9,39 +9,51 @@ class GameControls extends GetView<BingoController> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Obx(
-          () => ElevatedButton.icon(
+        
+        Obx(() {
+          final phase = controller.phase.value;
+          final isRunning = phase == GamePhase.running;
+          final isPaused = phase == GamePhase.paused;
+
+          final label =
+              isRunning
+                  ? controller.giveMeString('pause')
+                  : (isPaused
+                      ? controller.giveMeString('resume')
+                      : controller.giveMeString('start'));
+
+          final icon =
+              isRunning ? Icons.pause_circle_filled : Icons.play_circle_filled;
+
+          final bg =
+              isRunning
+                  ? Colors.orange.shade700
+                  : (isPaused
+                      ? Colors.blueGrey.shade600
+                      : Colors.green.shade600);
+
+          return ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor:
-                  controller.isGameRunning.value
-                      ? Colors.orange.shade700
-                      : Colors.green.shade600,
+              backgroundColor: bg,
               minimumSize: const Size(double.infinity, 48),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
             onPressed: controller.toggleGame,
-            icon: Icon(
-              controller.isGameRunning.value
-                  ? Icons.pause_circle_filled
-                  : Icons.play_circle_filled,
-            ),
-            label: Text(
-              controller.isGameRunning.value
-                  ? controller.giveMeString('pause')
-                  : controller.giveMeString('start'),
-            ),
-          ),
-        ),
+            icon: Icon(icon),
+            label: Text(label),
+          );
+        }),
         const SizedBox(height: 10),
 
+        
         Row(
           children: [
             Expanded(
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
-                onPressed: () async => controller.drawNumber(),
+                onPressed: () async => controller.drawNumber(forced: true),
                 icon: const Icon(Icons.casino),
                 label: Text(controller.giveMeString('give_one')),
               ),
@@ -53,7 +65,7 @@ class GameControls extends GetView<BingoController> {
                   minimumSize: const Size(0, 48),
                   foregroundColor: Colors.red.shade400,
                 ),
-                onPressed: controller.resetGame,
+                onPressed: () => controller.resetGame(),
                 icon: const Icon(Icons.refresh),
                 label: Text(controller.giveMeString('restart')),
               ),
@@ -63,6 +75,7 @@ class GameControls extends GetView<BingoController> {
 
         const SizedBox(height: 10),
 
+        
         Obx(
           () => Row(
             children: [

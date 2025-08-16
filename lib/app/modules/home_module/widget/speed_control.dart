@@ -87,6 +87,27 @@ class SpeedControl extends GetView<BingoController> {
                 onChanged: controller.setSpeed,
               ),
             ),
+
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: controller.exportTemplateJson,
+                    icon: const Icon(Icons.download),
+                    label: Text(controller.giveMeString('scaffold')),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: controller.importCustomJson,
+                    icon: const Icon(Icons.upload_file),
+                    label: Text(controller.giveMeString('import')),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
           ],
         ),
       ),

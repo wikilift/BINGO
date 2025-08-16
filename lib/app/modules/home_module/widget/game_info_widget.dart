@@ -22,8 +22,8 @@ class GameInfo extends GetView<BingoController> {
           children: [
             TextField(
               controller: playerCountController,
-              decoration: const InputDecoration(
-                labelText: 'Nº de Jugadores',
+              decoration: InputDecoration(
+                labelText: controller.giveMeString('player_number'),
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.number,
@@ -33,8 +33,8 @@ class GameInfo extends GetView<BingoController> {
             const SizedBox(height: 12),
             TextField(
               controller: ticketPriceController,
-              decoration: const InputDecoration(
-                labelText: 'Precio del Cartón (€)',
+              decoration: InputDecoration(
+                labelText: controller.giveMeString('price_to_play'),
                 border: OutlineInputBorder(),
               ),
               keyboardType: const TextInputType.numberWithOptions(

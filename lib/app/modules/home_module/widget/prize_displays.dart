@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/app/modules/home_module/bingo_controller.dart';
 import 'package:flutter_application_1/app/modules/home_module/widget/prize_row.dart';
 import 'package:get/get.dart';
-import 'package:get/get_state_manager/src/simple/get_view.dart';
 
 class PrizesDisplay extends GetView<BingoController> {
   const PrizesDisplay({super.key});
@@ -16,17 +15,17 @@ class PrizesDisplay extends GetView<BingoController> {
           () => Column(
             children: [
               PrizeRow(
-                label: 'Bote Total:',
+                label: controller.giveMeString('total_cash'),
                 value: '€${controller.totalPot.value.toStringAsFixed(2)}',
               ),
               const Divider(),
               PrizeRow(
-                label: 'Premio Línea (30%):',
+                label: controller.giveMeString('win_line'),
                 value: '€${controller.linePrize.value.toStringAsFixed(2)}',
               ),
               const SizedBox(height: 6),
               PrizeRow(
-                label: 'Premio Bingo (70%):',
+                label: controller.giveMeString('win_bingo'),
                 value: '€${controller.bingoPrize.value.toStringAsFixed(2)}',
               ),
             ],

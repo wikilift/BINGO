@@ -1,19 +1,21 @@
 {
   "chance_phrases":0.20,
   "phrases": {
+  "pause":   ["Pausa técnica, no perdáis el cartón."],
+  "resume":  ["Seguimos con el sorteo."],
     "start": [
-      "¡Arranca el bingo Morales, prevenidos!",
+      "¡Arranca el bingo Wikilift, prevenidos!",
       "Comienza la partida, ojos a los cartones.",
       "Bola va, bola viene… ¡que empiece el show!"
     ],
     "end": [
-      "Fin de la partida, gracias por jugar.",
+   
       "Terminamos, ¡buen juego!",
       "Se acabó lo que se daba… ¡hasta la próxima!",
       "El bombo se va a dormir, ¡buenas noches!"
     ],
     "line": [
-      "¡Línea! Verifiquemos el cartón.",
+      "¡Línea! Alguien tiene la suerte de su lado",
       "Tenemos línea, atención en mesa.",
       "¡Línea cantada! Que nadie se mueva."
     ],
@@ -150,6 +152,25 @@
       "paied_line":"Línea cobrada",
       "pay_line":"Cantar línea",
       "paied_bingo":"Bingo cobrado",
-      "pay_bingo":"Cantar bingo"
+      "pay_bingo":"Cantar bingo",
+      "last_number":"Último número",
+      "controls":"Controles",
+      "config":"Configuración",
+      "info":"Información de Partida",
+      "earn_by_win":"Premios",
+      "total_cash":"Bote Total:",
+      "win_line":"Premio Línea:",
+      "win_bingo":"Premio Bingo:",
+      "player_number":"Nº de Jugadores",
+      "price_to_play":"Precio del Cartón",
+      "save_lang":"Guardar plantilla idiomas",
+      "saved_path":"Plantilla guardada en:",
+      "error_saving_json":"Error guardando plantilla:",
+      "error_apply_json":"Configuración importada y aplicada",
+      "error_import_json":"Error importando config:",
+      "scaffold":"Plantilla",
+      "import":"Importar",
+      "resume":"Reanudar sorteo"
+
   }
 }

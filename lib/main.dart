@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/app/modules/home_module/bingo_binding.dart';
 import 'package:flutter_application_1/app/modules/home_module/bingo_page.dart';
 import 'package:get/route_manager.dart';
+import 'package:get_storage/get_storage.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await GetStorage.init('bingo');
 
   runApp(const BingoApp());
 }

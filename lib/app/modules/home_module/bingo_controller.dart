@@ -1,13 +1,26 @@
+
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:get/get.dart';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:get_storage/get_storage.dart';
+import 'package:path/path.dart' as p;
+
+enum GamePhase { idle, running, paused, ended }
 
 class BingoController extends GetxController {
   final FlutterTts flutterTts = FlutterTts();
+
+  final GetStorage _box = GetStorage('bingo');
+  static const _kCustomConfigKey = 'custom_config_json';
+  static const _kUseCustomConfigKey = 'use_custom_config';
 
   final RxList<int> availableNumbers = <int>[].obs;
   final RxList<int> calledNumbers = <int>[].obs;
@@ -18,10 +31,17 @@ class BingoController extends GetxController {
   final RxDouble lastLinePaid = 0.0.obs;
   final RxDouble lastBingoPaid = 0.0.obs;
 
+  final Rx<GamePhase> phase = GamePhase.idle.obs;
+  bool get isRunning => phase.value == GamePhase.running;
+  bool get isPaused => phase.value == GamePhase.paused;
+  bool get isIdle => phase.value == GamePhase.idle;
+
   final List<String> bingoPhrases = [];
   final List<String> deniedLinePhrases = [];
   final List<String> deniedBingoPhrases = [];
   final List<String> plusPhrases = [];
+  final List<String> pausePhrases = [];
+  final List<String> resumePhrases = [];
 
   final Random _rng = Random();
   final mapStrings = <String, dynamic>{};
@@ -43,8 +63,8 @@ class BingoController extends GetxController {
   final RxBool lineClaimed = false.obs;
   final RxBool bingoClaimed = false.obs;
 
-  final RxInt playerCount = 10.obs;
-  final RxDouble ticketPrice = 5.0.obs;
+  final RxInt playerCount = 3.obs;
+  final RxDouble ticketPrice = 1.0.obs;
   final RxDouble totalPot = 0.0.obs;
   final RxDouble linePrize = 0.0.obs;
   final RxDouble bingoPrize = 0.0.obs;
@@ -61,14 +81,72 @@ class BingoController extends GetxController {
   void onInit() async {
     super.onInit();
     _initializeTTS();
-    resetGame();
+    resetGame(silent: true);
     everAll([playerCount, ticketPrice], (_) => _calculatePrizes());
     _calculatePrizes();
-    await _loadPhrases().then((_) async => await Get.forceAppUpdate());
+    await _loadConfigFromStorageOrAssets();
+    await Get.forceAppUpdate();
   }
 
-  void resetGame() {
-    stopGame();
+  void _syncIsGameRunningFlag() {
+    isGameRunning.value = isRunning;
+  }
+
+  Future<void> startGame() async {
+    if (!isIdle) return; 
+    phase.value = GamePhase.running;
+    _syncIsGameRunningFlag();
+
+    if (startPhrases.isNotEmpty) {
+      await _speak(startPhrases[Random().nextInt(startPhrases.length)]);
+    }
+
+    _runAutoLoop();
+  }
+
+  Future<void> pauseGame({bool mustSpeak = true}) async {
+    if (!isRunning) return;
+    phase.value = GamePhase.paused;
+    _syncIsGameRunningFlag();
+
+    if (pausePhrases.isNotEmpty && mustSpeak) {
+      await _speak(pausePhrases[Random().nextInt(pausePhrases.length)]);
+    }
+  }
+
+  Future<void> resumeGame() async {
+    if (!isPaused) return;
+    phase.value = GamePhase.running;
+    _syncIsGameRunningFlag();
+
+    if (resumePhrases.isNotEmpty) {
+      await _speak(resumePhrases[Random().nextInt(resumePhrases.length)]);
+    }
+
+    _runAutoLoop();
+  }
+
+  
+  Future<void> endGame({bool speak = true}) async {
+    phase.value = GamePhase.ended;
+    _autoLoopRunning = false;
+    _syncIsGameRunningFlag();
+
+    if (speak && endPhrases.isNotEmpty) {
+      await _speak(endPhrases[Random().nextInt(endPhrases.length)]);
+    }
+  }
+
+  
+  Future<void> resetGame({bool silent = false}) async {
+    if (!silent) {
+      await endGame(speak: true);
+    } else {
+      phase.value = GamePhase.idle;
+      _autoLoopRunning = false;
+      _syncIsGameRunningFlag();
+    }
+
     lastCalledNumber.value = 0;
     calledNumbers.clear();
     availableNumbers.value = List.generate(90, (i) => i + 1);
@@ -76,6 +154,139 @@ class BingoController extends GetxController {
     bingoClaimed.value = false;
     lastLinePaid.value = 0.0;
     lastBingoPaid.value = 0.0;
+
+    phase.value = GamePhase.idle;
+    _syncIsGameRunningFlag();
+  }
+
+  
+  void toggleGame() {
+    if (isRunning) {
+      pauseGame();
+    } else if (isPaused) {
+      resumeGame();
+    } else if (isIdle) {
+      startGame();
+    }
+  }
+
+  String? _validateConfig(Map<String, dynamic> map) {
+    if (map.containsKey('chance_phrases')) {
+      final v = map['chance_phrases'];
+      if (v is! num || v < 0 || v > 1) {
+        return 'chance_phrases debe ser número entre 0 y 1';
+      }
+    }
+
+    if (!map.containsKey('phrases') || map['phrases'] is! Map) {
+      return 'Falta "phrases" o no es un objeto';
+    }
+    final ph = map['phrases'] as Map;
+    for (final k in ['start', 'end', 'line']) {
+      if (ph[k] != null && ph[k] is! List) {
+        return '"phrases.$k" debe ser una lista de strings';
+      }
+    }
+
+    if (!map.containsKey('nicknames') || map['nicknames'] is! Map) {
+      return 'Falta "nicknames" o no es un objeto';
+    }
+
+    final nicks = map['nicknames'] as Map;
+    for (final entry in nicks.entries) {
+      final key = int.tryParse(entry.key.toString());
+      if (key == null || key < 1 || key > 90) {
+        return 'nicknames: clave inválida ${entry.key} (use 1..90)';
+      }
+      if (entry.value is! String) {
+        return 'nicknames[$key] debe ser string';
+      }
+    }
+
+    if (map['strings'] != null && map['strings'] is! Map) {
+      return '"strings" debe ser un objeto si se incluye';
+    }
+    return null;
+  }
+
+  Future<void> _loadConfigFromStorageOrAssets() async {
+    try {
+      final stored = _box.read(_kCustomConfigKey);
+      final useCustom = _box.read(_kUseCustomConfigKey) == true;
+      if (useCustom && stored is String && stored.isNotEmpty) {
+        final map = json.decode(stored) as Map<String, dynamic>;
+        final err = _validateConfig(map);
+        if (err == null) {
+          _applyConfig(map);
+          return;
+        } else {
+          Get.snackbar('Config', 'JSON guardado no válido: $err');
+        }
+      }
+
+      await _loadPhrasesFromAssets();
+    } catch (e) {
+      await _loadPhrasesFromAssets();
+    }
+  }
+
+  Future<void> _loadPhrasesFromAssets() async {
+    try {
+      final raw = await rootBundle.loadString('assets/raw/data.json');
+      final map = json.decode(raw) as Map<String, dynamic>;
+      _applyConfig(map);
+    } catch (e) {
+      print("Exception loading json from assets: $e");
+    }
+  }
+
+  void _applyConfig(Map<String, dynamic> map) {
+    mapStrings
+      ..clear()
+      ..addAll((map['strings'] ?? {}) as Map<String, dynamic>);
+
+    final phrases = (map['phrases'] ?? {}) as Map<String, dynamic>;
+    _nicknameChance =
+        (map['chance_phrases'] is num)
+            ? (map['chance_phrases'] as num).toDouble().clamp(0.0, 1.0)
+            : _nicknameChance;
+
+    startPhrases
+      ..clear()
+      ..addAll(List<String>.from(phrases['start'] ?? const []));
+    endPhrases
+      ..clear()
+      ..addAll(List<String>.from(phrases['end'] ?? const []));
+    linePhrases
+      ..clear()
+      ..addAll(List<String>.from(phrases['line'] ?? const []));
+
+    bingoPhrases
+      ..clear()
+      ..addAll(List<String>.from(phrases['bingo'] ?? const []));
+    deniedLinePhrases
+      ..clear()
+      ..addAll(List<String>.from(phrases['denied_line'] ?? const []));
+    deniedBingoPhrases
+      ..clear()
+      ..addAll(List<String>.from(phrases['denied_bingo'] ?? const []));
+    plusPhrases
+      ..clear()
+      ..addAll(List<String>.from(phrases['plus'] ?? const []));
+
+    nicknames
+      ..clear()
+      ..addAll(
+        ((map['nicknames'] ?? {}) as Map<String, dynamic>).map(
+          (k, v) => MapEntry(int.tryParse(k) ?? -1, v.toString()),
+        )..removeWhere((k, _) => k < 1 || k > 90),
+      );
+    pausePhrases
+      ..clear()
+      ..addAll(List<String>.from(phrases['pause'] ?? const []));
+    resumePhrases
+      ..clear()
+      ..addAll(List<String>.from(phrases['resume'] ?? const []));
   }
 
   Future<double> claimLine() async {
@@ -90,25 +301,27 @@ class BingoController extends GetxController {
       return 0.0;
     }
 
-    final wasRunning = isGameRunning.value;
-    isGameRunning.value = false;
-
-    try {
-      final phrase =
-          linePhrases.isNotEmpty
-              ? linePhrases[Random().nextInt(linePhrases.length)]
-              : giveMeString('line_fallback');
-      await _speak(phrase);
-
-      lastLinePaid.value = linePrize.value;
-      lineClaimed.value = true;
-      return lastLinePaid.value;
-    } finally {
-      if (wasRunning && availableNumbers.isNotEmpty && !bingoClaimed.value) {
-        isGameRunning.value = true;
-        _runAutoLoop();
-      }
+    final wasRunning = isRunning;
+    if (wasRunning) {
+      await pauseGame(mustSpeak: false);
     }
+
+    final phrase =
+        linePhrases.isNotEmpty
+            ? linePhrases[Random().nextInt(linePhrases.length)]
+            : giveMeString('line_fallback');
+    await _speak(phrase);
+
+    lastLinePaid.value = linePrize.value;
+    lineClaimed.value = true;
+
+    final player = AudioPlayer();
+    try {
+      await player.play(AssetSource('sound/line.mp3'));
+    } catch (_) {}
+
+    
+    return lastLinePaid.value;
   }
 
   Future<double> claimBingo() async {
@@ -123,7 +336,7 @@ class BingoController extends GetxController {
       return 0.0;
     }
 
-    isGameRunning.value = false;
+    phase.value = GamePhase.running; 
     _autoLoopRunning = false;
 
     final multiplier = (calledNumbers.length == 15) ? 10 : 1;
@@ -141,22 +354,15 @@ class BingoController extends GetxController {
 
     bingoClaimed.value = true;
 
-    if (endPhrases.isNotEmpty) {
-      await _speak(endPhrases[Random().nextInt(endPhrases.length)]);
-    }
+    
+    final player = AudioPlayer();
+    try {
+      await player.play(AssetSource('sound/bingo.mp3'));
+    } catch (_) {}
 
+    
+    await endGame(speak: true);
     return lastBingoPaid.value;
-  }
-
-  void startGame() async {
-    if (isGameRunning.value) return;
-    isGameRunning.value = true;
-
-    if (startPhrases.isNotEmpty) {
-      await _speak(startPhrases[Random().nextInt(startPhrases.length)]);
-    }
-
-    _runAutoLoop();
   }
 
   Future<void> stopGame() async {
@@ -165,14 +371,6 @@ class BingoController extends GetxController {
 
     if (endPhrases.isNotEmpty) {
       await _speak(endPhrases[Random().nextInt(endPhrases.length)]);
-    }
-  }
-
-  void toggleGame() {
-    if (isGameRunning.value) {
-      stopGame();
-    } else {
-      if (availableNumbers.isNotEmpty) startGame();
     }
   }
 
@@ -203,11 +401,13 @@ class BingoController extends GetxController {
     return list.isNotEmpty ? list.first : null;
   }
 
-  Future<void> drawNumber() async {
-    if (_isSpeaking) return;
-    if (availableNumbers.isEmpty) {
-      stopGame();
-      return;
+  Future<void> drawNumber({bool forced = false}) async {
+    if (!forced) {
+      if (_isSpeaking || phase.value != GamePhase.running) return;
+      if (availableNumbers.isEmpty) {
+        await endGame(speak: true);
+        return;
+      }
     }
 
     final randomIndex = Random().nextInt(availableNumbers.length);
@@ -227,7 +427,7 @@ class BingoController extends GetxController {
     }
 
     if (availableNumbers.isEmpty) {
-      await stopGame();
+      await endGame(speak: true);
     }
   }
 
@@ -236,7 +436,7 @@ class BingoController extends GetxController {
     _autoLoopRunning = true;
 
     while (_autoLoopRunning &&
-        isGameRunning.value &&
+        phase.value == GamePhase.running &&
         availableNumbers.isNotEmpty) {
       final cycleStart = DateTime.now();
 
@@ -246,14 +446,16 @@ class BingoController extends GetxController {
       final targetMs = (speed.value * 1000).toInt();
       final remaining = targetMs - elapsedMs;
 
-      if (remaining > 0 && _autoLoopRunning && isGameRunning.value) {
+      if (remaining > 0 &&
+          _autoLoopRunning &&
+          phase.value == GamePhase.running) {
         await Future.delayed(Duration(milliseconds: remaining));
       }
     }
 
     _autoLoopRunning = false;
     if (availableNumbers.isEmpty) {
-      await stopGame();
+      await endGame(speak: true);
     }
   }
 
@@ -376,39 +578,9 @@ class BingoController extends GetxController {
   }
 
   String giveMeString(String s) {
-    if (mapStrings.containsKey(s)) {
-      return mapStrings[s];
-    }
-    return "no error on json db";
-  }
-
-  Future<void> _loadPhrases() async {
-    try {
-      final raw = await rootBundle.loadString('assets/raw/data.json');
-      final map = json.decode(raw) as Map<String, dynamic>;
-      mapStrings.addAll((map['strings'] ?? {}) as Map<String, dynamic>);
-      final phrases = (map['phrases'] ?? {}) as Map<String, dynamic>;
-      _nicknameChance = map['chance_phrases'] ?? _nicknameChance;
-      startPhrases
-        ..clear()
-        ..addAll(List<String>.from(phrases['start'] ?? const []));
-      endPhrases
-        ..clear()
-        ..addAll(List<String>.from(phrases['end'] ?? const []));
-      linePhrases
-        ..clear()
-        ..addAll(List<String>.from(phrases['line'] ?? const []));
-
-      nicknames
-        ..clear()
-        ..addAll(
-          ((map['nicknames'] ?? {}) as Map<String, dynamic>).map(
-            (k, v) => MapEntry(int.tryParse(k) ?? -1, v.toString()),
-          )..removeWhere((k, _) => k < 1 || k > 90),
-        );
-    } catch (e) {
-      print("Exception loading json :$e");
-    }
+    final val = mapStrings[s];
+    if (val is String && val.isNotEmpty) return val;
+    return s;
   }
 
   void setSpeed(double newSpeed) {
@@ -430,6 +602,68 @@ class BingoController extends GetxController {
   Future<void> speakLineAward() async {
     if (linePhrases.isNotEmpty) {
       await _speak(linePhrases[Random().nextInt(linePhrases.length)]);
+    }
+  }
+
+  Future<void> exportTemplateJson() async {
+    try {
+      final raw = await rootBundle.loadString('assets/raw/data.json');
+      final suggestedName = 'bingo_template.json';
+
+      final savePath = await FilePicker.platform.saveFile(
+        dialogTitle: giveMeString('save_lang'),
+        fileName: suggestedName,
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (savePath == null) return;
+
+      final f = File(savePath.endsWith('.json') ? savePath : '$savePath.json');
+      await f.writeAsString(raw);
+
+      Get.snackbar(
+        giveMeString('config'),
+        '${giveMeString('saved_path')}\n${p.basename(f.path)}',
+      );
+    } catch (e) {
+      Get.snackbar(
+        giveMeString('config'),
+        '${giveMeString('error_saving_json')} $e',
+      );
+    }
+  }
+
+  Future<void> importCustomJson() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        allowMultiple: false,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.single;
+      final bytes = file.bytes ?? await File(file.path!).readAsBytes();
+      final content = utf8.decode(bytes);
+      final map = json.decode(content) as Map<String, dynamic>;
+
+      final err = _validateConfig(map);
+      if (err != null) {
+        Get.snackbar('Config', 'JSON inválido: $err');
+        return;
+      }
+
+      _applyConfig(map);
+      await _box.write(_kCustomConfigKey, content);
+      await _box.write(_kUseCustomConfigKey, true);
+
+      Get.snackbar(giveMeString('config'), giveMeString('error_apply_json'));
+    } catch (e) {
+      Get.snackbar(
+        giveMeString('config'),
+        '${giveMeString('error_import_json')} $e',
+      );
     }
   }
 }

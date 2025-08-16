@@ -37,26 +37,26 @@ class ControlPanel extends GetView<BingoController> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SectionTitle(title: 'Último Número'),
+                  SectionTitle(title: controller.giveMeString('last_number')),
                   const LastNumberDisplay(),
                   const SizedBox(height: 16),
 
-                  const SectionTitle(title: 'Controles'),
+                  SectionTitle(title: controller.giveMeString('controls')),
                   const GameControls(),
                   const SizedBox(height: 16),
 
-                  const SectionTitle(title: 'Configuración'),
+                  SectionTitle(title: controller.giveMeString('config')),
                   const SpeedControl(),
                   const SizedBox(height: 16),
 
-                  const SectionTitle(title: 'Información de Partida'),
+                  SectionTitle(title: controller.giveMeString('info')),
                   GameInfo(
                     playerCountController: playerCountController,
                     ticketPriceController: ticketPriceController,
                   ),
                   const SizedBox(height: 16),
 
-                  const SectionTitle(title: 'Premios'),
+                  SectionTitle(title: controller.giveMeString('earn_by_win')),
                   const PrizesDisplay(),
                 ],
               ),
