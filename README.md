@@ -1,5 +1,7 @@
 # ENGLISH
 
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://buymeacoffee.com/wikilift)
+
 # 🎲 Wikilift Bingo
 
 This project is a **complete Bingo suite** developed from the ground up by [wikilift](https://github.com/wikilift).
